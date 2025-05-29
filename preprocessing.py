@@ -18,7 +18,7 @@ torque_cols = [col for col in df.columns if 'TORQUE_FEEDBACK' in col][:6]
 ordered_cols = ['TIMESTAMP'] + position_cols + velocity_cols + torque_cols
 
 # Do not drop the first row unless you know it's not data
-# df = df.drop(df.index[0])
+df = df.drop(df.index[0])
 
 df_ordered = df[ordered_cols]
 
