@@ -1,7 +1,7 @@
 import pandas as pd
 import argparse
 
-def split_val_test(input_csv, split_ratio):
+def split_val_test(input_csv, split_ratio=.5):
     df = pd.read_csv(input_csv, header=None)
     split_idx = int(len(df) * split_ratio)
     val_df = df.iloc[:split_idx].copy()
