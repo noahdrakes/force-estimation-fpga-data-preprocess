@@ -1,10 +1,7 @@
 import pandas as pd
 import argparse
 
-# DOWNSAMPLE WITHOUT FILTERING
-def downsample_csv(input_file, output_file, original_freq, target_freq):
-    df = pd.read_csv(input_file, header=None)
-
+def downsample_dataframe(df, original_freq, target_freq, use_moving_average=False):
     # Compute window size
     window_size = int(original_freq / target_freq)
     if window_size < 1:
@@ -14,29 +11,32 @@ def downsample_csv(input_file, output_file, original_freq, target_freq):
     timestamps = df.iloc[:, 0]
     data = df.iloc[:, 1:]
 
-    # Downsample without filtering
-    timestamps_downsampled = timestamps.iloc[::window_size].reset_index(drop=True)
-    data_downsampled = data.iloc[::window_size].reset_index(drop=True)
+    if use_moving_average:
+        n_windows = len(df) // window_size
+        timestamps_downsampled = timestamps.iloc[:n_windows * window_size].groupby(
+            timestamps.index[:n_windows * window_size] // window_size).mean().reset_index(drop=True)
+        data_downsampled = data.iloc[:n_windows * window_size].groupby(
+            data.index[:n_windows * window_size] // window_size).mean().reset_index(drop=True)
+    else:
+        timestamps_downsampled = timestamps.iloc[::window_size].reset_index(drop=True)
+        data_downsampled = data.iloc[::window_size].reset_index(drop=True)
 
     # Combine timestamps and data
     df_downsampled = pd.concat([timestamps_downsampled, data_downsampled], axis=1)
-
-    # Drop rows that are all NaN (except timestamps)
-    # df_downsampled = df_downsampled.dropna(how='all', subset=df_downsampled.columns[1:])
-
-    # Save output without header and index
-    df_downsampled.to_csv(output_file, index=False, header=False)
-    print(f"Saved downsampled CSV to {output_file}")
+    return df_downsampled
 
 
 # MAIN
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Downsample CSV by selecting rows")
+    parser = argparse.ArgumentParser(description="Downsample CSV with optional moving average")
     parser.add_argument("input_csv", type=str, help="Path to input CSV file")
     parser.add_argument("output_csv", type=str, help="Path to save downsampled CSV")
     parser.add_argument("--original_freq", type=float, required=True, help="Original frequency (Hz)")
     parser.add_argument("--target_freq", type=float, required=True, help="Target downsample frequency (Hz)")
+    parser.add_argument("--use_moving_average", action='store_true', help="Use moving average for downsampling")
     args = parser.parse_args()
-    
-    downsample_csv(args.input_csv, args.output_csv, args.original_freq, args.target_freq)
-    print("done")
+
+    df = pd.read_csv(args.input_csv, header=None)
+    df_downsampled = downsample_dataframe(df, args.original_freq, args.target_freq, use_moving_average=args.use_moving_average)
+    df_downsampled.to_csv(args.output_csv, index=False, header=False)
+    print(f"Saved downsampled CSV to {args.output_csv}")

@@ -17,26 +17,36 @@ def design_fir_filter(filter_type: str, fs: float, fC: float, order: int):
     else:
         raise ValueError(f"Unknown filter type: {filter_type}")
 
-def apply_filter_to_torque_feedback(csv_path, output_path, fir_coeffs, fs_in=None, fs_out=None, preserve_rate=True):
+def apply_filter_to_torque_feedback_df(df, fir_coeffs):
     """
-    Apply zero-phase FIR filter to torque feedback columns in a CSV file.
-    
+    Apply zero-phase FIR filter to torque feedback columns in a DataFrame.
+
     Parameters:
-        csv_path (str): Input CSV file path
-        output_path (str): Output CSV file path
+        df (pd.DataFrame): Input DataFrame
         fir_coeffs (array): FIR filter coefficients
-        fs_in (float, optional): Original sampling rate (required if downsampling)
-        fs_out (float, optional): Desired sampling rate (if downsampling)
-        preserve_rate (bool): If False and fs_out is provided, will downsample
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame
     """
-    df = pd.read_csv(csv_path, header=None)
-    
     torque_cols = list(range(13, 19))
     df.iloc[:, torque_cols] = filtfilt(fir_coeffs, [1.0], df.iloc[:, torque_cols], axis=0)
-    
-    if not preserve_rate and fs_in and fs_out:
-        factor = int(fs_in // fs_out)
-        df = df.iloc[::factor].reset_index(drop=True)
+    return df
 
-    df.to_csv(output_path, index=False, header=False)
-    print(f"Filtered {'and downsampled ' if not preserve_rate and fs_out else ''}and saved to {output_path}")
+
+# If run as a script, provide CLI for file I/O
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_csv", type=str)
+    parser.add_argument("output_csv", type=str)
+    parser.add_argument("--filter_type", type=str, default="kaiser")
+    parser.add_argument("--fs", type=float, required=True)
+    parser.add_argument("--fC", type=float, required=True)
+    parser.add_argument("--order", type=int, default=30)
+    args = parser.parse_args()
+
+    df = pd.read_csv(args.input_csv, header=None)
+    fir_coeffs = design_fir_filter(args.filter_type, args.fs, args.fC, args.order)
+    df_filtered = apply_filter_to_torque_feedback_df(df, fir_coeffs)
+    df_filtered.to_csv(args.output_csv, index=False, header=False)
+    print(f"Filtered and saved to {args.output_csv}")
