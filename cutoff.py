@@ -2,6 +2,7 @@ import pandas as pd
 
 def truncate_dataframe(df, seconds_to_trim, frequency):
     total_rows = len(df)
+    print("total rows: ", total_rows)
     rows_to_trim = int(seconds_to_trim * frequency)
     total_rows_to_remove = 2 * rows_to_trim
     if total_rows_to_remove >= total_rows:
