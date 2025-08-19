@@ -6,3 +6,5 @@ lib/
 pyvenv.cfg
 .venv
 __pycache__/
+data/
+share/
