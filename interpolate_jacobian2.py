@@ -9,25 +9,35 @@ def compute_flattened_jacobian(input_csv, output_csv, robot_file):
     if r.LoadRobot(robot_file) != 0:
         raise RuntimeError(f"Failed to load robot file: {robot_file}")
 
-    # Load joint configurations from CSV
-    df = pd.read_csv(input_csv, header=None)
-    joint_configs = df.iloc[:, 1:7].values  # Extract joint positions (columns 1-6)
+    # Load joint configurations and timestamps
+    df = pd.read_csv(input_csv)
+    timestamps = df["TIMESTAMP"].to_numpy()
+    joint_configs = df[
+        [
+            "POSITION_FEEDBACK_1",
+            "POSITION_FEEDBACK_2",
+            "POSITION_FEEDBACK_3",
+            "POSITION_FEEDBACK_4",
+            "POSITION_FEEDBACK_5",
+            "POSITION_FEEDBACK_6",
+        ]
+    ].to_numpy()
 
-    # Prepare output data
-    flattened_jacobians = []
+    rows = []
+    for ts, jp in zip(timestamps, joint_configs):
+        J = np.zeros((6, 6), dtype=np.float64)
+        r.JacobianSpatial(jp, J)  # fills J in-place
 
-    for jp in joint_configs:
-        # Compute spatial Jacobian
-        J_spatial = np.zeros((6, 6), dtype=np.double)
-        r.JacobianSpatial(jp, J_spatial)
+        # >>> KEY CHANGE: flatten in column-major (Fortran) order <<<
+        row = np.concatenate(([ts], J.flatten(order="F")))
+        rows.append(row)
 
-        # Flatten the Jacobian and append to output
-        flattened_jacobians.append(J_spatial.flatten())
+    arr = np.asarray(rows)
 
-    # Save flattened Jacobians to CSV
-    flattened_jacobians = np.array(flattened_jacobians)
-    pd.DataFrame(flattened_jacobians).to_csv(output_csv, index=False, header=False)
-    print(f"Flattened Jacobians saved to {output_csv}")
+    # Optional: write a header (timestamp + J11..J66 in column-major order)
+    header = ["TIMESTAMP"] + [f"J{r}{c}" for c in range(1,7) for r in range(1,7)]
+    pd.DataFrame(arr, columns=header).to_csv(output_csv, index=False)
+    print(f"Flattened Jacobians (column-major) written to {output_csv}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compute flattened Jacobians for joint configurations")
