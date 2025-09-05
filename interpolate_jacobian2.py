@@ -28,15 +28,18 @@ def compute_flattened_jacobian(input_csv, output_csv, robot_file):
         J = np.zeros((6, 6), dtype=np.float64)
         r.JacobianSpatial(jp, J)  # fills J in-place
 
+        print(J) 
+        exit()
+
         # >>> KEY CHANGE: flatten in column-major (Fortran) order <<<
-        row = np.concatenate(([ts], J.flatten(order="F")))
+        row = np.concatenate(([ts], J.flatten(order="C")))
         rows.append(row)
 
     arr = np.asarray(rows)
 
     # Optional: write a header (timestamp + J11..J66 in column-major order)
-    header = ["TIMESTAMP"] + [f"J{r}{c}" for c in range(1,7) for r in range(1,7)]
-    pd.DataFrame(arr, columns=header).to_csv(output_csv, index=False)
+    # header = ["TIMESTAMP"] + [f"J{r}{c}" for c in range(1,7) for r in range(1,7)]
+    pd.DataFrame(arr).to_csv(output_csv, index=False, header=False)
     print(f"Flattened Jacobians (column-major) written to {output_csv}")
 
 if __name__ == "__main__":
