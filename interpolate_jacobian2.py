@@ -44,7 +44,7 @@ def compute_flattened_jacobian(input_csv, output_csv, robot_file):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compute flattened Jacobians for joint configurations")
-    parser.add_argument("input_csv", type=str, help="Path to interpolated_all_joints.csv")
+    parser.add_argument("input_csv", type=str, help="Path to unit converted .csv . should be in the format capture_unitConvert.csv")
     parser.add_argument("output_csv", type=str, help="Path to save flattened Jacobians")
     parser.add_argument("robot_file", type=str, help="Path to robot file (.rob)")
     args = parser.parse_args()

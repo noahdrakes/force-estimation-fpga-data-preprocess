@@ -20,5 +20,6 @@ def preprocess_csv(input_csv_path: str, output_csv_path: str = 'interpolated_all
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Preprocess force estimation data.')
     parser.add_argument('fileA', type=str, help='Path to the first CSV file (moving in free space)')
+    parser.add_argument("output_path", type=str, help="output_path")
     args = parser.parse_args()
-    preprocess_csv(args.fileA)
+    preprocess_csv(args.fileA, args.output_path)
