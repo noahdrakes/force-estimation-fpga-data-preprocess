@@ -8,3 +8,5 @@ pyvenv.cfg
 __pycache__
 data/
 share/
+*.csv
+*.bag
