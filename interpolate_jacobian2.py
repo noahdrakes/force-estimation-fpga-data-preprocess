@@ -28,8 +28,8 @@ def compute_flattened_jacobian(input_csv, output_csv, robot_file):
         J = np.zeros((6, 6), dtype=np.float64)
         r.JacobianSpatial(jp, J)  # fills J in-place
 
-        print(J) 
-        exit()
+        # print(J) 
+        # exit()
 
         # >>> KEY CHANGE: flatten in column-major (Fortran) order <<<
         row = np.concatenate(([ts], J.flatten(order="C")))
