@@ -24,16 +24,20 @@ def compute_flattened_jacobian(input_csv, output_csv, robot_file):
     ].to_numpy()
 
     rows = []
+    i = 0
     for ts, jp in zip(timestamps, joint_configs):
         J = np.zeros((6, 6), dtype=np.float64)
         r.JacobianSpatial(jp, J)  # fills J in-place
 
-        # print(J) 
+        if i == 0:
+            print("FIRST JACOBIAN VALUE")
+            print(J) 
         # exit()
 
         # >>> KEY CHANGE: flatten in column-major (Fortran) order <<<
         row = np.concatenate(([ts], J.flatten(order="C")))
         rows.append(row)
+        i+=1
 
     arr = np.asarray(rows)
 
