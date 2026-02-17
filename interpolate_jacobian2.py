@@ -9,19 +9,15 @@ def compute_flattened_jacobian(input_csv, output_csv, robot_file):
     if r.LoadRobot(robot_file) != 0:
         raise RuntimeError(f"Failed to load robot file: {robot_file}")
 
-    # Load joint configurations and timestamps
+    # Load joint configurations and timestamps by fixed column index:
+    # col 0 = timestamp, cols 1..6 = joint positions.
     df = pd.read_csv(input_csv)
-    timestamps = df["TIMESTAMP"].to_numpy()
-    joint_configs = df[
-        [
-            "POSITION_FEEDBACK_1",
-            "POSITION_FEEDBACK_2",
-            "POSITION_FEEDBACK_3",
-            "POSITION_FEEDBACK_4",
-            "POSITION_FEEDBACK_5",
-            "POSITION_FEEDBACK_6",
-        ]
-    ].to_numpy()
+    if df.shape[1] < 7:
+        raise ValueError(
+            f"Expected at least 7 columns (timestamp + 6 joint positions), got {df.shape[1]}"
+        )
+    timestamps = df.iloc[:, 0].to_numpy()
+    joint_configs = df.iloc[:, 1:7].to_numpy()
 
     rows = []
     i = 0
