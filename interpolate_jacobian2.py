@@ -11,7 +11,7 @@ def compute_flattened_jacobian(input_csv, output_csv, robot_file):
 
     # Load joint configurations and timestamps by fixed column index:
     # col 0 = timestamp, cols 1..6 = joint positions.
-    df = pd.read_csv(input_csv)
+    df = pd.read_csv(input_csv, header=None)
     if df.shape[1] < 7:
         raise ValueError(
             f"Expected at least 7 columns (timestamp + 6 joint positions), got {df.shape[1]}"
