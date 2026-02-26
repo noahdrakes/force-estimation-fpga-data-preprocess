@@ -38,6 +38,21 @@ def main() -> None:
     fig.savefig(out_png, dpi=200)
     print(f"Saved {out_png}")
 
+    fig_res, axes_res = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+    for i, (_pot, enc, enc_raw) in enumerate(pairs, start=1):
+        ax = axes_res[i - 1]
+        residual = pd.to_numeric(df[enc], errors="coerce") - pd.to_numeric(df[enc_raw], errors="coerce")
+        ax.plot(t, residual, linewidth=0.9)
+        ax.set_title(f"Joint {i} residual: {enc} - {enc_raw}")
+        ax.set_ylabel("Residual")
+        ax.grid(alpha=0.25)
+
+    axes_res[-1].set_xlabel("Time from start")
+    fig_res.tight_layout()
+    out_res_png = csv_path.with_name(f"{csv_path.stem}_encoder_residual.png")
+    fig_res.savefig(out_res_png, dpi=200)
+    print(f"Saved {out_res_png}")
+
 
 if __name__ == "__main__":
     main()
