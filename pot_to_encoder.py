@@ -3,6 +3,28 @@ import numpy as np
 import pandas as pd
 
 
+def _fit_linear_map(x: pd.Series, y: pd.Series) -> tuple[float, float]:
+    x_num = pd.to_numeric(x, errors="coerce").to_numpy(dtype=float)
+    y_num = pd.to_numeric(y, errors="coerce").to_numpy(dtype=float)
+
+    valid = np.isfinite(x_num) & np.isfinite(y_num)
+    if np.count_nonzero(valid) < 2:
+        return 1.0, 0.0
+
+    x_valid = x_num[valid]
+    y_valid = y_num[valid]
+
+    x_mean = x_valid.mean()
+    y_mean = y_valid.mean()
+    denom = np.sum((x_valid - x_mean) ** 2)
+    if denom <= np.finfo(float).eps:
+        return 1.0, float(y_mean - x_mean)
+
+    slope = float(np.sum((x_valid - x_mean) * (y_valid - y_mean)) / denom)
+    intercept = float(y_mean - slope * x_mean)
+    return slope, intercept
+
+
 def _smoothed_velocity(
     timestamps: pd.Series,
     positions: pd.Series,
@@ -62,8 +84,8 @@ def replace_encoder_from_pots(
 
     for pot_col, enc_pos_col, sign in pot_to_encoder_pos:
         signed_pot = df[pot_col] * sign
-        offset = df[enc_pos_col].iloc[0] - signed_pot.iloc[0]
-        df[enc_pos_col] = signed_pot + offset
+        slope, intercept = _fit_linear_map(signed_pot, df[enc_pos_col])
+        df[enc_pos_col] = slope * signed_pot + intercept
 
     if update_velocity:
         vel_cols = [f"ENCODER_VEL_{i}" for i in range(1, 4)]
@@ -85,7 +107,7 @@ def replace_encoder_from_pots(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Replace ENCODER_POS_1/2/3 using POT_3/4/inverted POT_5 before unit conversion."
+        description="Replace ENCODER_POS_1/2/3 using linearly mapped POT_3/4/inverted POT_5 before unit conversion."
     )
     parser.add_argument("input_csv", type=str, help="Path to raw CSV with headers")
     parser.add_argument("output_csv", type=str, help="Path to save transformed CSV")
