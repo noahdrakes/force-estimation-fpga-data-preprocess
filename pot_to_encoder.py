@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
@@ -59,7 +60,18 @@ def replace_encoder_from_pots(
     update_velocity: bool = True,
     vel_smooth_span: int = 25,
 ) -> pd.DataFrame:
-    df = pd.read_csv(input_csv)
+    input_path = Path(input_csv).expanduser().resolve()
+    output_path = Path(output_csv).expanduser().resolve()
+
+    if not input_path.exists():
+        raise FileNotFoundError(
+            f"Input CSV not found: {input_path}\n"
+            "Verify the exact path and run this script before plotting residuals."
+        )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    df = pd.read_csv(input_path)
 
     required_cols = [
         "TIMESTAMP",
@@ -103,7 +115,8 @@ def replace_encoder_from_pots(
                 smooth_span=vel_smooth_span,
             )
 
-    df.to_csv(output_csv, index=False)
+    df.to_csv(output_path, index=False)
+    print(f"Wrote POT-mapped encoder CSV to: {output_path}")
     return df
 
 
@@ -121,10 +134,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "--vel-smooth-span",
         type=int,
-        default=25,
+        default=6,
         help="Smoothing span used for POT-derived velocity calculation.",
     )
+    parser.add_argument(
+        "--residual-notch-60hz",
+        action="store_true",
+        help="Deprecated/no-op in this script. Residual filtering is handled in plot/encoder_vs_pot.py.",
+    )
+    parser.add_argument(
+        "--notch-q",
+        type=float,
+        default=30.0,
+        help="Deprecated/no-op in this script. Residual filtering is handled in plot/encoder_vs_pot.py.",
+    )
     args = parser.parse_args()
+
+    if args.residual_notch_60hz:
+        print(
+            "Warning: --residual-notch-60hz is ignored by pot_to_encoder.py. "
+            "Use plot/encoder_vs_pot.py for residual notch filtering."
+        )
 
     replace_encoder_from_pots(
         input_csv=args.input_csv,
