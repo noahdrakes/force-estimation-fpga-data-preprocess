@@ -76,6 +76,17 @@ def main() -> None:
         action="store_true",
         help="Print per-joint residual change stats after notch filtering.",
     )
+    parser.add_argument(
+        "--save-filtered-residual-csv",
+        nargs="?",
+        const="",
+        default=None,
+        help=(
+            "Save plotted residual traces to CSV. "
+            "If a path is provided, write there; otherwise uses "
+            "<input_stem>_encoder_residual_filtered.csv next to input."
+        ),
+    )
     args = parser.parse_args()
     if args.kaiser_order < 1:
         raise ValueError("--kaiser-order must be >= 1.")
@@ -110,6 +121,8 @@ def main() -> None:
     fig_res, axes_res = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
     fs = None
     cutoff_hz = args.residual_kaiser_cutoff
+    residual_df = pd.DataFrame({"TIMESTAMP": pd.to_numeric(df["TIMESTAMP"], errors="coerce"), "TIME_FROM_START": t})
+    residual_series = []
     if cutoff_hz is not None:
         fs = _infer_sampling_rate(df["TIMESTAMP"])
         print(
@@ -143,6 +156,9 @@ def main() -> None:
                         f"Joint {i}: mean|delta|={mean_abs_delta:.6g}, "
                         f"max|delta|={max_abs_delta:.6g}, rms(raw)={raw_rms:.6g}, rms(filt)={filt_rms:.6g}"
                     )
+        residual_to_plot = np.asarray(residual_to_plot, dtype=float)
+        residual_series.append(residual_to_plot)
+        residual_df[f"JOINT_{i}_RESIDUAL"] = residual_to_plot
         ax.plot(t, residual_to_plot, linewidth=0.9)
         ax.set_title(f"Joint {i} residual: {enc} - {enc_raw}")
         ax.set_ylabel("Residual")
@@ -153,6 +169,33 @@ def main() -> None:
     out_res_png = csv_path.with_name(f"{csv_path.stem}_encoder_residual.png")
     fig_res.savefig(out_res_png, dpi=200)
     print(f"Saved {out_res_png}")
+    fig_overlay, axes_overlay = plt.subplots(3, 1, figsize=(12, 8), sharex=True)
+    for i, (pot, enc, enc_raw) in enumerate(pairs, start=1):
+        ax = axes_overlay[i - 1]
+        ax.plot(t, df[pot], label=pot, linewidth=0.9)
+        ax.plot(t, df[enc], label=f"{enc} (mapped)", linewidth=0.9)
+        ax.plot(t, df[enc_raw], label=f"{enc_raw} (raw)", linewidth=0.9, alpha=0.7)
+        ax2 = ax.twinx()
+        ax2.plot(t, residual_series[i - 1], color="green", linewidth=0.9, label="Residual")
+        ax.set_title(f"Joint {i}: encoder/pot with residual")
+        ax.set_ylabel("Encoder/POT")
+        ax2.set_ylabel("Residual")
+        ax.grid(alpha=0.25)
+        lines_1, labels_1 = ax.get_legend_handles_labels()
+        lines_2, labels_2 = ax2.get_legend_handles_labels()
+        ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc="upper right", fontsize=8)
+    axes_overlay[-1].set_xlabel("Time from start")
+    fig_overlay.tight_layout()
+    out_overlay_png = csv_path.with_name(f"{csv_path.stem}_encoder_pot_residual_overlay.png")
+    fig_overlay.savefig(out_overlay_png, dpi=200)
+    print(f"Saved {out_overlay_png}")
+    if args.save_filtered_residual_csv is not None:
+        if args.save_filtered_residual_csv == "":
+            out_res_csv = csv_path.with_name(f"{csv_path.stem}_encoder_residual_filtered.csv")
+        else:
+            out_res_csv = Path(args.save_filtered_residual_csv).expanduser().resolve()
+        residual_df.to_csv(out_res_csv, index=False)
+        print(f"Saved {out_res_csv}")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,44 @@ def design_fir_filter(filter_type: str, fs: float, fC: float, order: int):
     else:
         raise ValueError(f"Unknown filter type: {filter_type}")
 
+def apply_filter_to_dataframe(
+    df: pd.DataFrame,
+    fir_coeffs,
+    column_indices=None,
+    exclude_column_indices=None,
+):
+    """
+    Generic zero-phase FIR filter wrapper for DataFrame columns.
+
+    Parameters:
+        df (pd.DataFrame): Input DataFrame.
+        fir_coeffs (array-like): FIR filter coefficients.
+        column_indices (iterable[int] | None): Columns to filter. If None, filters all columns.
+        exclude_column_indices (iterable[int] | None): Columns to exclude from filtering.
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame.
+    """
+    if column_indices is None:
+        column_indices = list(range(df.shape[1]))
+    else:
+        column_indices = list(column_indices)
+
+    if exclude_column_indices is not None:
+        excluded = set(exclude_column_indices)
+        column_indices = [idx for idx in column_indices if idx not in excluded]
+
+    if not column_indices:
+        return df
+
+    df.iloc[:, column_indices] = filtfilt(
+        fir_coeffs,
+        [1.0],
+        df.iloc[:, column_indices],
+        axis=0,
+    )
+    return df
+
 def apply_filter_to_torque_feedback_df(df, fir_coeffs, filter_velocity=False, filter_position=False):
     """
     Apply zero-phase FIR filter to torque feedback columns in a DataFrame.
@@ -31,13 +69,13 @@ def apply_filter_to_torque_feedback_df(df, fir_coeffs, filter_velocity=False, fi
         pd.DataFrame: Filtered DataFrame
     """
     torque_cols = list(range(13, 19))
-    df.iloc[:, torque_cols] = filtfilt(fir_coeffs, [1.0], df.iloc[:, torque_cols], axis=0)
+    apply_filter_to_dataframe(df, fir_coeffs, column_indices=torque_cols)
     if filter_velocity:
         velocity_cols = list(range(7, 13))
-        df.iloc[:, velocity_cols] = filtfilt(fir_coeffs, [1.0], df.iloc[:, velocity_cols], axis=0)
+        apply_filter_to_dataframe(df, fir_coeffs, column_indices=velocity_cols)
     if filter_position:
         position_cols = list(range(1, 7))
-        df.iloc[:, position_cols] = filtfilt(fir_coeffs, [1.0], df.iloc[:, position_cols], axis=0)
+        apply_filter_to_dataframe(df, fir_coeffs, column_indices=position_cols)
     return df
 
 def apply_filter_to_fs_df(df, fir_coeffs):
@@ -53,7 +91,7 @@ def apply_filter_to_fs_df(df, fir_coeffs):
         pd.DataFrame: Filtered DataFrame
     """
     force_torque_cols = list(range(1, 7))
-    df.iloc[:, force_torque_cols] = filtfilt(fir_coeffs, [1.0], df.iloc[:, force_torque_cols], axis=0)
+    apply_filter_to_dataframe(df, fir_coeffs, column_indices=force_torque_cols)
     return df
 
 
