@@ -8,15 +8,70 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+from scipy.signal import correlate, correlation_lags
+
+
+def _shift_array(arr: np.ndarray, lag: int) -> np.ndarray:
+    out = np.full_like(arr, np.nan, dtype=float)
+    if lag == 0:
+        out[:] = arr
+    elif lag > 0:
+        out[lag:] = arr[:-lag]
+    else:
+        k = -lag
+        out[:-k] = arr[k:]
+    return out
+
+
+def _best_lag_for_alignment(
+    residual: np.ndarray,
+    reference: np.ndarray,
+    max_lag: int,
+) -> tuple[int, float]:
+    valid = np.isfinite(residual) & np.isfinite(reference)
+    if np.count_nonzero(valid) < 3:
+        return 0, float("nan")
+
+    r = residual[valid].astype(float, copy=False)
+    x = reference[valid].astype(float, copy=False)
+    r = r - np.mean(r)
+    x = x - np.mean(x)
+
+    c = correlate(r, x, mode="full")
+    lags = correlation_lags(len(r), len(x), mode="full")
+    keep = (lags >= -max_lag) & (lags <= max_lag)
+    c = c[keep]
+    lags = lags[keep]
+    if c.size == 0:
+        return 0, float("nan")
+
+    best_idx = int(np.argmax(np.abs(c)))
+    best_lag = int(lags[best_idx])
+
+    denom = float(np.sqrt(np.sum(r * r) * np.sum(x * x)))
+    best_corr = float(c[best_idx] / denom) if denom > np.finfo(float).eps else float("nan")
+    return best_lag, best_corr
+
+
+def _joint_index_from_residual_col(col_name: str) -> int | None:
+    match = re.search(r"JOINT_(\d+)_RESIDUAL", str(col_name).upper())
+    if match:
+        return int(match.group(1))
+    return None
 
 
 def append_encoder_residuals(
     joints_csv: Path,
     encoder_info_csv: Path,
     output_csv: Path | None = None,
+    align_residuals: bool = False,
+    align_reference: str = "encoder",
+    align_max_lag: int = 200,
 ) -> Path:
     if not joints_csv.is_file():
         raise FileNotFoundError(f"Missing joints CSV: {joints_csv}")
@@ -26,19 +81,37 @@ def append_encoder_residuals(
     joints_df = pd.read_csv(joints_csv, header=None)
     encoder_df = pd.read_csv(encoder_info_csv)
 
-    # Append only JOINT_1/2/3 residuals in this order.
-    expected_residuals = [
-        "JOINT_1_RESIDUAL",
-        "JOINT_2_RESIDUAL",
-        "JOINT_3_RESIDUAL",
-    ]
-    col_lookup = {str(c).upper(): c for c in encoder_df.columns}
-    missing = [name for name in expected_residuals if name not in col_lookup]
-    if missing:
+    residual_cols = [c for c in encoder_df.columns if "residual" in str(c).lower()]
+    if not residual_cols:
         raise ValueError(
-            f"Missing required residual columns in {encoder_info_csv}: {missing}"
+            f"No residual columns found in {encoder_info_csv}. "
+            "Expected at least one column containing 'residual'."
         )
-    residual_cols = [col_lookup[name] for name in expected_residuals]
+
+    if align_max_lag < 0:
+        raise ValueError(f"align_max_lag must be >= 0, got {align_max_lag}")
+
+    residual_df_full = encoder_df.loc[:, residual_cols].copy()
+    if align_residuals:
+        ref_prefix = "ENCODER_POS_" if align_reference == "encoder" else "MAPPED_POT_"
+        for fallback_i, res_col in enumerate(residual_cols, start=1):
+            joint_i = _joint_index_from_residual_col(str(res_col))
+            idx = joint_i if joint_i is not None else fallback_i
+            ref_col = f"{ref_prefix}{idx}"
+            if ref_col not in encoder_df.columns:
+                print(
+                    f"Skipping alignment for {res_col}: missing reference column {ref_col}."
+                )
+                continue
+
+            residual = pd.to_numeric(encoder_df[res_col], errors="coerce").to_numpy(dtype=float)
+            reference = pd.to_numeric(encoder_df[ref_col], errors="coerce").to_numpy(dtype=float)
+            lag, corr = _best_lag_for_alignment(residual, reference, align_max_lag)
+            shifted = _shift_array(residual, lag)
+            residual_df_full[res_col] = pd.Series(shifted).bfill().ffill().to_numpy(dtype=float)
+            print(
+                f"{res_col} alignment: lag={lag} samples, corr={corr:.6f}, reference={ref_col}"
+            )
 
     min_len = min(len(joints_df), len(encoder_df))
     if len(joints_df) != len(encoder_df):
@@ -51,7 +124,7 @@ def append_encoder_residuals(
         raise ValueError("No rows available after alignment (min length is 0)")
 
     joints_df = joints_df.iloc[:min_len].reset_index(drop=True)
-    residual_df = encoder_df.loc[: min_len - 1, residual_cols].reset_index(drop=True)
+    residual_df = residual_df_full.iloc[:min_len].reset_index(drop=True)
 
     out_df = pd.concat([joints_df, residual_df], axis=1)
     out_path = output_csv if output_csv is not None else joints_csv
@@ -80,12 +153,37 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional output path. Defaults to overwriting joints_csv.",
     )
+    parser.add_argument(
+        "--no-align-residuals",
+        action="store_true",
+        help="Disable residual alignment before appending.",
+    )
+    parser.add_argument(
+        "--align-reference",
+        type=str,
+        default="encoder",
+        choices=["encoder", "mapped_pot"],
+        help="Signal used to align each residual column.",
+    )
+    parser.add_argument(
+        "--align-max-lag",
+        type=int,
+        default=300,
+        help="Max lag (in samples) searched in both directions for alignment.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    append_encoder_residuals(args.joints_csv, args.encoder_info_csv, args.output)
+    append_encoder_residuals(
+        args.joints_csv,
+        args.encoder_info_csv,
+        args.output,
+        align_residuals=not args.no_align_residuals,
+        align_reference=args.align_reference,
+        align_max_lag=args.align_max_lag,
+    )
 
 
 if __name__ == "__main__":

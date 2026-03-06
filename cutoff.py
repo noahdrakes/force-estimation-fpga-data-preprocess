@@ -1,6 +1,7 @@
 import pandas as pd
 
 def truncate_dataframe(df, seconds_to_trim, frequency):
+    print("here")
     total_rows = len(df)
     print("total rows: ", total_rows)
     rows_to_trim = int(seconds_to_trim * frequency)
@@ -8,6 +9,8 @@ def truncate_dataframe(df, seconds_to_trim, frequency):
     if total_rows_to_remove >= total_rows:
         raise ValueError("Cannot remove more rows than available in the dataframe")
     df_truncated = df.iloc[rows_to_trim:total_rows - rows_to_trim]
+
+    print("Finished truncating dataframe!")
     return df_truncated
 
 if __name__ == "__main__":
