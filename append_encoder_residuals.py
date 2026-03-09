@@ -69,6 +69,7 @@ def append_encoder_residuals(
     joints_csv: Path,
     encoder_info_csv: Path,
     output_csv: Path | None = None,
+    save_alignment_debug_csv: Path | None = None,
     align_residuals: bool = False,
     align_reference: str = "encoder",
     align_max_lag: int = 200,
@@ -92,23 +93,50 @@ def append_encoder_residuals(
         raise ValueError(f"align_max_lag must be >= 0, got {align_max_lag}")
 
     residual_df_full = encoder_df.loc[:, residual_cols].copy()
+    alignment_debug_cols: dict[str, np.ndarray] = {}
+    lag_info: dict[str, int] = {}
+    corr_info: dict[str, float] = {}
     if align_residuals:
         ref_prefix = "ENCODER_POS_" if align_reference == "encoder" else "MAPPED_POT_"
         for fallback_i, res_col in enumerate(residual_cols, start=1):
             joint_i = _joint_index_from_residual_col(str(res_col))
             idx = joint_i if joint_i is not None else fallback_i
             ref_col = f"{ref_prefix}{idx}"
+            raw_residual = pd.to_numeric(encoder_df[res_col], errors="coerce").to_numpy(dtype=float)
             if ref_col not in encoder_df.columns:
                 print(
                     f"Skipping alignment for {res_col}: missing reference column {ref_col}."
                 )
+                alignment_debug_cols[f"JOINT_{idx}_RESIDUAL_RAW"] = raw_residual
+                alignment_debug_cols[f"JOINT_{idx}_RESIDUAL_SHIFTED"] = raw_residual
+                lag_info[f"JOINT_{idx}_LAG_SAMPLES"] = 0
+                corr_info[f"JOINT_{idx}_ALIGN_CORR"] = float("nan")
                 continue
 
-            residual = pd.to_numeric(encoder_df[res_col], errors="coerce").to_numpy(dtype=float)
+            residual = raw_residual
             reference = pd.to_numeric(encoder_df[ref_col], errors="coerce").to_numpy(dtype=float)
             lag, corr = _best_lag_for_alignment(residual, reference, align_max_lag)
             shifted = _shift_array(residual, lag)
-            residual_df_full[res_col] = pd.Series(shifted).bfill().ffill().to_numpy(dtype=float)
+            shifted_filled = pd.Series(shifted).bfill().ffill().to_numpy(dtype=float)
+            residual_df_full[res_col] = shifted_filled
+            lag_info[f"JOINT_{idx}_LAG_SAMPLES"] = lag
+            corr_info[f"JOINT_{idx}_ALIGN_CORR"] = corr
+            alignment_debug_cols[f"JOINT_{idx}_RESIDUAL_RAW"] = residual
+            alignment_debug_cols[f"JOINT_{idx}_RESIDUAL_SHIFTED"] = shifted_filled
+            if ref_col in encoder_df.columns:
+                alignment_debug_cols[f"JOINT_{idx}_ALIGN_REFERENCE"] = pd.to_numeric(
+                    encoder_df[ref_col], errors="coerce"
+                ).to_numpy(dtype=float)
+            enc_col = f"ENCODER_POS_{idx}"
+            pot_col = f"MAPPED_POT_{idx}"
+            if enc_col in encoder_df.columns:
+                alignment_debug_cols[f"JOINT_{idx}_ENCODER_POS"] = pd.to_numeric(
+                    encoder_df[enc_col], errors="coerce"
+                ).to_numpy(dtype=float)
+            if pot_col in encoder_df.columns:
+                alignment_debug_cols[f"JOINT_{idx}_MAPPED_POT"] = pd.to_numeric(
+                    encoder_df[pot_col], errors="coerce"
+                ).to_numpy(dtype=float)
             print(
                 f"{res_col} alignment: lag={lag} samples, corr={corr:.6f}, reference={ref_col}"
             )
@@ -129,6 +157,26 @@ def append_encoder_residuals(
     out_df = pd.concat([joints_df, residual_df], axis=1)
     out_path = output_csv if output_csv is not None else joints_csv
     out_df.to_csv(out_path, index=False, header=False)
+
+    if save_alignment_debug_csv is not None:
+        debug_df = pd.DataFrame()
+        if "TIMESTAMP" in encoder_df.columns:
+            debug_df["TIMESTAMP"] = pd.to_numeric(encoder_df["TIMESTAMP"], errors="coerce")
+        else:
+            debug_df["SAMPLE_INDEX"] = np.arange(len(encoder_df), dtype=int)
+
+        for key, values in alignment_debug_cols.items():
+            debug_df[key] = values
+
+        for key, value in lag_info.items():
+            debug_df[key] = value
+        for key, value in corr_info.items():
+            debug_df[key] = value
+
+        debug_df = debug_df.iloc[:min_len].reset_index(drop=True)
+        save_alignment_debug_csv.parent.mkdir(parents=True, exist_ok=True)
+        debug_df.to_csv(save_alignment_debug_csv, index=False)
+        print(f"Saved alignment debug CSV: {save_alignment_debug_csv}")
 
     print(
         f"Appended {len(residual_cols)} residual columns to {out_path}. "
@@ -152,6 +200,15 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help="Optional output path. Defaults to overwriting joints_csv.",
+    )
+    parser.add_argument(
+        "--save-alignment-debug-csv",
+        type=Path,
+        default=None,
+        help=(
+            "Optional path to save raw/shifted residual alignment debug data, "
+            "including encoder and mapped pot traces when present."
+        ),
     )
     parser.add_argument(
         "--no-align-residuals",
@@ -180,6 +237,7 @@ def main() -> None:
         args.joints_csv,
         args.encoder_info_csv,
         args.output,
+        args.save_alignment_debug_csv,
         align_residuals=not args.no_align_residuals,
         align_reference=args.align_reference,
         align_max_lag=args.align_max_lag,
