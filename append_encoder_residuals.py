@@ -237,8 +237,7 @@ def main() -> None:
         args.joints_csv,
         args.encoder_info_csv,
         args.output,
-        args.save_alignment_debug_csv,
-        align_residuals=not args.no_align_residuals,
+        align_residuals=False,
         align_reference=args.align_reference,
         align_max_lag=args.align_max_lag,
     )
